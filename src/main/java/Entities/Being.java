@@ -11,9 +11,9 @@ import Constants.World_Constants;
 import Tools.Vertice;
 import Universe.IWorldObject;
 import Universe.Inanimate;
+import Universe.Resource;
 import Universe.Space;
 import Universe.World;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Queue;
@@ -27,30 +27,41 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public class Being implements IWorldObject, Comparable
 {
-    int gender; // 0 = female, 1 = males
-    Space previousSpace;
-    Space currentSpace;
-    int yMove;
-    int xMove;
-    double lifeRemaining = World_Constants.BEING_LIFE;
-    double ageRateModifier = 1;
-    Timer metabolicTimer;
-    World world;
-    int ylocation = -1;
-    int xlocation = -1;
-    String name;
-    double moveRange;
-    Being parentA;
-    Being parentB;
-    Being partner;
-    ArrayList<Being> children = new ArrayList<Being>();
-    ArrayList<Being> Siblings = new ArrayList<Being>();
-    Graph socialNetwork = new Graph();
-    ArrayList<Trait> traits = new ArrayList<Trait>();
-    ArrayList<Motivation> motivations = new ArrayList<Motivation>();
-    Vertice identity = new Vertice(this,0);
-    Queue<Space> pastMoves = new LinkedList<Space>();
-    HashMap<Motivation,ArrayList> pathMemories = new HashMap<Motivation,ArrayList>();
+    private Object data;
+    private int age;
+    private int gender; // 0 = female, 1 = males
+    private int yMove;
+    private int xMove;
+    private double lifeRemaining = World_Constants.BEING_LIFE;
+    private double ageRateModifier = 1;
+    private Timer metabolicTimer = new Timer();
+    private World world;
+    private int ylocation = -1;
+    private int xlocation = -1;
+    private String name;
+    private double moveRange;
+    private Being parentA;
+    private Being parentB;
+    private Being partner;
+    private ArrayList<Being> children = new ArrayList<Being>();
+    private ArrayList<Being> Siblings = new ArrayList<Being>();
+    private Graph socialNetwork = new Graph();
+    private ArrayList<Trait> traits = new ArrayList<Trait>();
+    private ArrayList<Motivation> motivations = new ArrayList<Motivation>();
+    private Vertice identity = new Vertice(this,0);
+    private Queue<Space> pastMoves = new LinkedList<Space>();
+    private HashMap<Motivation,ArrayList> pathMemories = new HashMap<Motivation,ArrayList>();
+    private boolean hasVirus = false;
+    private boolean hasImmunity = true;
+    
+    private int happiness = 0;
+    private int energy = 0;
+    
+    private int consumeHappinessModifier;
+    private int socialiseHappinessModifier;
+    private int breedHappinessModifier;
+    
+    
     
     public Being(int yloc, int xloc, Being parentA, Being ParentB, World w)
     {
@@ -62,7 +73,6 @@ public class Being implements IWorldObject, Comparable
         ylocation = yloc;
         xlocation = xloc;
         born();
-        //this.start();
     }
         
     public Being(int yloc, int xloc, World w)
@@ -75,7 +85,6 @@ public class Being implements IWorldObject, Comparable
         ylocation = yloc;
         xlocation = xloc;
         born();
-        //this.start();
     }
     
     public Being(World w)
@@ -86,7 +95,25 @@ public class Being implements IWorldObject, Comparable
         motivations.add(Motivation.SOCIALISE);
         motivations.add(Motivation.BREED);
         born();
-        //this.start();
+    }
+    
+    public void maximiseHappiness()
+    {
+        //TO DO
+        //predictive training model to determine what moves maximise happiness
+        
+    }
+    
+    public void consume(Resource resource)
+    {
+        //TO DO
+        //being consumes element for use to:
+        
+        //gain energy
+        energy = energy + resource.getEnergy();
+        
+        //increase happiness
+        //happiness = 1 * consumeHappinessModifier;
     }
     
     public int getGender()
@@ -96,11 +123,13 @@ public class Being implements IWorldObject, Comparable
     
     public void move(int yMod, int xMod)
     {   
-        //move only to a new space
-        if(yMod !=0 & xMod !=0)
+        if(yMod !=0 || xMod !=0)
         {
             if(world.movePresence(yMod, xMod, this))
             {
+                //add current space to the end of the past moves queue
+                pastMoves.offer(new Space(ylocation,xlocation));
+                
                 //update being location
                 ylocation = ylocation+yMod;
                 xlocation = xlocation+xMod;
@@ -116,17 +145,45 @@ public class Being implements IWorldObject, Comparable
         {
             if(gender==0)
             {
-                Being child = new Being(ylocation, xlocation, parentA, parentB, world);
-                this.addChild(child);
-                parentB.addChild(child);
-                world.registerExistence(child);     
+                
+                TimerTask giveBirth = new TimerTask() {
+                @Override
+                public void run() 
+                {
+                    giveBirth(parentB);
+                    }
+                };
+                //start Timer
+                metabolicTimer.schedule(giveBirth,World_Constants.BEING_METABOLIC_RATE*World_Constants.BIRTH_AGE);
+                
             }
         }
         if(children.size() == World_Constants.BEING_CHILD_LIMIT)
         {
             //if max children have been made, remove the motivation to breed
-            motivations.remove(Motivation.BREED);
-            die();
+            //motivations.remove(Motivation.BREED);
+        }
+    }
+    
+    public Timer getThread()
+    {
+        return metabolicTimer;
+    }
+    
+    public void giveBirth(Being parentB)
+    {
+        Being child = new Being(ylocation-1, xlocation-1, parentA, parentB, world);
+        //registerExistence method checks if world pop is full
+        //if not full, add the child
+        if(world.registerExistence(child, metabolicTimer))
+        {
+            this.addChild(child);
+            parentB.addChild(child);
+        }      
+        else
+        {
+            //System.out.println();
+            child.die();
         }
     }
     
@@ -151,11 +208,14 @@ public class Being implements IWorldObject, Comparable
     }
     
     public void born()
-    {
+    {   
         
-        //initialize Timer
-        metabolicTimer = new Timer();
-        
+        /**
+        if(ThreadLocalRandom.current().nextInt(1,World_Constants.BIRTH_CHANCE_OF_VIRUS_MAX+1) < World_Constants.BIRTH_CHANCE_OF_VIRUS)
+        {
+            setHasVirus(true);
+        }
+        * **/
         //create task to be repeated by Timer
         TimerTask live = new TimerTask() {
             @Override
@@ -173,6 +233,7 @@ public class Being implements IWorldObject, Comparable
     public void live()
     {
         lifeRemaining = lifeRemaining - (World_Constants.BEING_AGE_RATE * ageRateModifier);
+        age = age + World_Constants.BEING_AGE_RATE;
         if(lifeRemaining > 0)
         {
             this.traverseWorld();
@@ -194,28 +255,31 @@ public class Being implements IWorldObject, Comparable
     } 
     
     public void socialise(Being otherBeing, int mag, int degree)
-    {        
-        //if being is not already in this beings social network
-        if(!socialNetwork.checkIfNodeExists(otherBeing))
+    {   
+        if(otherBeing != null)  
         {
-            //creates a vertice with reference of beings thread reference
-            Vertice otherIdentity = new Vertice(otherBeing,mag);
-            //add other being to this beings social network
-            socialNetwork.addVertice(otherBeing, otherIdentity);
-            //add edge between this being and the other
-            socialNetwork.AddEdge(identity, otherIdentity, degree);
-            //System.out.println("Added to social network");
-            
-        }
-        //if being is already in this beings social network
-        else if(socialNetwork.checkIfNodeExists(otherBeing))
-        {
-            //increase the value of the node by 1
-            socialNetwork.getVertice(otherBeing.toString()).increaseValue();
-            //increase the weight of the connection by 1
-            socialNetwork.getEdge(this, otherBeing).increaseWeight();
-            //System.out.println("I already know you " + otherBeing.toString());
-            
+            //if other being is not already in this beings social network
+            if(!socialNetwork.checkIfNodeExists(otherBeing) & socialNetwork.getSize()<=World_Constants.DUNBARS_NUMBER)
+            {
+                //creates a vertice with reference of beings thread reference
+                Vertice otherIdentity = new Vertice(otherBeing,mag);
+                //add other being to this beings social network
+                socialNetwork.addVertice(otherBeing, otherIdentity);
+                //add edge between this being and the other
+                socialNetwork.AddEdge(identity, otherIdentity, degree);
+                //System.out.println("Added to social network");
+
+            }
+            //if other being is already in this beings social network
+            else if(socialNetwork.checkIfNodeExists(otherBeing))
+            {
+                //increase the value of the node by 1
+                socialNetwork.getVertice(otherBeing.toString()).increaseValue();
+                //increase the weight of the connection by 1
+                //socialNetwork.getEdge(this, otherBeing).increaseWeight();
+                //System.out.println("I already know you " + otherBeing.toString());
+
+            }
         }
     }
     
@@ -287,13 +351,14 @@ public class Being implements IWorldObject, Comparable
             if(o instanceof Being)
             {
                 try
-                {
-                    if(o!=this && motivations.contains(Motivation.BREED) && socialNetwork.checkIfNodeExists((Being)o) && socialNetwork.getEdge(this,(Being)o).getWeight()>socialNetwork.getEdge(this,(Being) objectOfInterest).getWeight())
+                {              
+                    
+                    if(o!=this && motivations.contains(Motivation.BREED) & socialNetwork.checkIfNodeExists((Being)o) & socialNetwork.getEdge(this,(Being)o).getWeight()>socialNetwork.getEdge(this,(Being) objectOfInterest).getWeight())
                     {
                         objectOfInterest = (Being) o;
                         //System.out.println("I WANT TO BREED WITH " + o.toString());
                     }
-                    if(o!=this && motivations.contains(Motivation.SOCIALISE) && !socialNetwork.checkIfNodeExists((Being)o))
+                    if(o!=this && motivations.contains(Motivation.SOCIALISE) & !socialNetwork.checkIfNodeExists((Being)o))
                     {
                         objectOfInterest = (Being) o;
                         //System.out.println("I WANT TO SOCIALIZE WITH " + o.toString());
@@ -302,13 +367,17 @@ public class Being implements IWorldObject, Comparable
                 catch(Exception e){
                 }
             }
-            if(o instanceof Inanimate)
+            if(o instanceof Resource)
             {
-                
+                if(o!=this && motivations.contains(Motivation.FEED))
+                {
+                    objectOfInterest = (Resource) o;
+                    //System.out.println("I WANT TO EAT " + o.toString());
+                }    
             } 
         }
         
-        //DETERMINE DIRECTION TO MOVE
+        //DETERMINE DIRECTION TO MOVE TO GET TO OBJECT OF INTEREST
         if(objectOfInterest != null && objectOfInterest.getYLocation()<this.ylocation)
         {
             //object is above - move up
@@ -354,16 +423,20 @@ public class Being implements IWorldObject, Comparable
         }
         
         //DETECT ADJACENT OBJECTS
-        //loop through objects to detect if object if interest is within 1x or 1y in any direction z
+        //loop through objects to detect if object of interest is within 1x or 1y in any direction
         for(IWorldObject o:objectsInSight)
         {
-            int yDelta = o.getYLocation() - ylocation;
-            int xDelta = o.getXLocation() - xlocation;
-            
-            //if the difference between the object lcoation is 1 coordinate away 
-            if(yDelta >=-1 & yDelta<=1 & xDelta >=-1 & xDelta <=1)
+            if(o!=null)
             {
-               interact(o);
+                //get location of object
+                int yDelta = o.getYLocation() - ylocation;
+                int xDelta = o.getXLocation() - xlocation;
+
+                //if the difference between the object lcoation is 1 coordinate away 
+                if(yDelta >=-1 & yDelta<=1 & xDelta >=-1 & xDelta <=1)
+                {
+                   interact(o);
+                }
             }
         }
         
@@ -378,6 +451,7 @@ public class Being implements IWorldObject, Comparable
         //[3,0][3,1][3,2][3,3][3,4];
         //[4,0][4,1][4,2][4,3][4,4];
         
+        //CHECK FOR NULL SPACE AND PREVENT MOVEMENT IN THAT DIRECTION
         if(surroundings[World_Constants.BEING_SIGHT_RANGE+yMove][World_Constants.BEING_SIGHT_RANGE+xMove] == null)
         {
             if(yMove == -1)
@@ -402,232 +476,18 @@ public class Being implements IWorldObject, Comparable
                 xMove = -1;
             }
         }
-        
-        
-
         //FINALLY, MOVE
+        //move this being
         this.move(yMove,xMove);
     }
-    
-    public void traverseWorldOriginal()
-    {        
-        //get sub matrix
-        Space[][] surroundings = world.getSurroundingSpaces(World_Constants.BEING_SIGHT_RANGE,ylocation,xlocation);
-        Space[] immediateArea = new Space[8];
-        Space[] sightBoundary = new Space[16];
 
-        //array width & height = (2*range)+1
-        //but because index starts at 0, dimensions = 2* range
-
-        //if sight range is 1
-        //current space is
-        //y = sight range
-        //x = sight range
-        
-        //Interpret surroundings###############
-        //[0,0][0,1][0,2][0,3][0,4]
-        //[1,0][1,1][1,2][1,3][1,4];
-        //[2,0][2,1][2,2][2,3][2,4];
-        //[3,0][3,1][3,2][3,3][3,4];
-        //[4,0][4,1][4,2][4,3][4,4];
-        
-        //if something is above
-        //y<currentY
-        //x=currentX
-        
-        //if something is above left
-        //y<currentY
-        //x<currentX
-        
-        //if something is above left
-        //y=currentY
-        //x<currentX
-        
-        //if someting is below left
-        //y>currentY
-        //x<currentX
-        
-        //if something is below
-        //y>currentY
-        //x=currentX
-        
-        //if something is below right
-        //y>currentY
-        //x>currentX
-        
-        //if something is right
-        //y=currentY
-        //x>currentX
-        
-        //if something is above right
-        //y<currentY
-        //x>currentX
-        
-        
-        //get boundary of surroundings
-        sightBoundary[0] = surroundings[0][2];  //up-up
-        sightBoundary[1] = surroundings[0][1]; //up-up-left
-        sightBoundary[2] = surroundings[0][0]; //up-up-left-left
-        sightBoundary[3] = surroundings[0][3]; //up-up-right
-        sightBoundary[4] = surroundings[0][4]; //up-up-right-right
-        sightBoundary[5] = surroundings[2][0]; //left-left 
-        sightBoundary[6] = surroundings[1][0]; //left-left-up
-        sightBoundary[7] = surroundings[3][0]; //left-left-down
-        sightBoundary[8] = surroundings[2][4]; //right-right
-        sightBoundary[9] = surroundings[1][4]; //right-right-up
-        sightBoundary[10] = surroundings[3][4]; //right-right-down
-        sightBoundary[11] = surroundings[4][2]; //down-down
-        sightBoundary[12] = surroundings[4][1]; //down-down-left
-        sightBoundary[13] = surroundings[4][0]; //down-down-left-left
-        sightBoundary[14] = surroundings[4][3]; //down-down-right
-        sightBoundary[15] = surroundings[4][4]; //down-down-right-right
-        
-        //get immediate area of surroundings
-        currentSpace = surroundings[2][2]; //currentSpace
-        immediateArea[0] = surroundings[1][2]; // up
-        immediateArea[1] = surroundings[1][1]; //upleft
-        immediateArea[2] = surroundings[1][3]; //upright
-        immediateArea[3] = surroundings[2][1]; //left
-        immediateArea[4] = surroundings[2][3]; //right
-        immediateArea[5] = surroundings[3][2]; //down
-        immediateArea[6] = surroundings[3][1]; //downleft
-        immediateArea[7] = surroundings[3][3]; //downright
-
-        
-        
-        
-        
-        //keep a record of the previous space just left
-        //if previous space has not yet been set, set it to the current space
-        if(previousSpace==null)
-            previousSpace = surroundings[2][2];
-        else
-            previousSpace = currentSpace; 
-        
-        //SET RANDOM MOVE DIRECTION
-        yMove = ThreadLocalRandom.current().nextInt(-1,1+1);
-        xMove = ThreadLocalRandom.current().nextInt(-1,1+1);
-        
-        //determine move direction
-        
-        //CHECK FOR BOUNDARY
-        //if boundary is up
-        if(immediateArea[0] == null)
-        {
-            //move down
-            yMove = 1;
-            //System.out.println("a");
-        }
-        //if an boundary is left
-        if(immediateArea[3] == null)
-        {
-            //move right
-            xMove = 1;
-            //System.out.println("b");
-        }
-        //if an boundary is right
-        if(immediateArea[4] == null)
-        {
-            //move left
-            xMove = -1;
-            //System.out.println("c");
-        }
-        //if boundary is down
-        if(immediateArea[5] == null)
-        {
-            //move up
-            yMove = -1;
-            //System.out.println("f");
-        }
-        
-        
-        //CHECK SURROUNDING SITE RANGE
-        for(Space s:sightBoundary)
-        {
-            if(s != null && s.getObjectInSpace() instanceof Being)
-            {
-                Being b = (Being) s.getObjectInSpace();
-                if(motivations.contains(Motivation.BREED))
-                {
-                    //if a being is in sight range - move towards it
-                    if(b.getYLocation()>this.ylocation)
-                        //move down
-                        yMove = 1;
-                    if(b.getYLocation()<this.ylocation)
-                        //move up
-                        yMove = -1;
-                    if(b.getXLocation()>this.xlocation) 
-                        //move right
-                        xMove = 1;
-                    if(b.getXLocation()<this.xlocation)
-                        //move left
-                        xMove = -1;
-                }
-                if(motivations.contains(Motivation.SOCIALISE))
-                {
-
-
-                }
-            }
-            if(s != null && s.getObjectInSpace() instanceof Inanimate)
-            {
-                if(motivations.contains(Motivation.HUNGER))
-                {
-                    //if its food, move towards it
-                }
-                
-            }
-        }
-        
-        
-        //CHECK IMMEDIATE AREA
-        //for each space in the immediate area
-        for(Space s:immediateArea)
-        {
-            //if space is not null and contains a being, stop for a cycle
-            //unless - the object is already stationary, start moving again
-            if(s!= null && s.getObjectInSpace() != null)
-            {
-                //if the being is not stationary - stop
-                if(previousSpace != currentSpace)
-                {
-                    yMove = 0;
-                    xMove = 0; 
-                }
-                //interact with the object
-                interact(s.getObjectInSpace());
-            }
-        }
-        this.move(yMove,xMove);
-
-        //USE IF NEEDED##############
-        //loop through surroundings 
-        //increment row
-        /**
-        for(int r=0;r<(2*World_Constants.BEING_SIGHT_RANGE)+1;r++)
-        {
-            //increment column
-            for(int c=0;c<(2*World_Constants.BEING_SIGHT_RANGE)+1;c++)
-            {
-                
-                if(surroundings[r][c] != null)
-                {
-                    //Space space = surroundings[r][c];
-                    //System.out.println(space.getYLocation()+","+space.getXLocation());
-                    
-                }
-            }  
-        }
-        **/
-    }
-    
     public boolean checkMotivations(Motivation motivation)
     {
         return motivations.contains(motivation);
     }
     
     public void interact(IWorldObject o)
-    {
+    {        
         if(o instanceof Being)
         {
             Being otherBeing = (Being) o;
@@ -653,7 +513,53 @@ public class Being implements IWorldObject, Comparable
                     socialise(otherBeing,1,1);
                 }
             }
+            
+            //if being has a/the virus
+            if(hasVirus == true)
+            {
+                //determine if it passes it on
+                if(ThreadLocalRandom.current().nextInt(1,11) < World_Constants.VIRUS_CONTAGEON_RATE)
+                {
+                    otherBeing.setHasVirus(true);                    
+                }
+                else
+                {
+                    otherBeing.setHasImmunity(true);
+                }
+            }
         }
+    }
+    
+    public void setHasVirus(boolean result)
+    {
+        //if if being current does have the virus
+        if(hasVirus)
+        {   //and is cured
+            if(!result)
+            {   //give them their remaining life back
+                lifeRemaining = World_Constants.BEING_LIFE - age;
+                hasVirus = false;
+            }
+        }
+        //if if being current does not have the virus
+        else if (!hasVirus)
+        {   //and they contract the virus
+            if(result)
+            {   //reduce their life expetancy
+                lifeRemaining = lifeRemaining * World_Constants.VIRUS_MORTALITY_RATE;
+                hasVirus = true;
+            }            
+        }
+    }
+    
+    public boolean getHasVirus()
+    {
+        return hasVirus;
+    }
+    
+    public void setHasImmunity(boolean hasImmunity)    
+    {
+        this.hasImmunity = hasImmunity;
     }
     
     @Override
@@ -687,7 +593,8 @@ public class Being implements IWorldObject, Comparable
     {
         HUNGER,
         BREED,
-        SOCIALISE
+        SOCIALISE,
+        FEED
     }
     
 }
