@@ -13,6 +13,7 @@ public class Inanimate implements IWorldObject{
 
     int ylocation;
     int xlocation;
+    boolean isFocussed = false;
     
     public Inanimate(int y, int x)
     {
@@ -33,6 +34,11 @@ public class Inanimate implements IWorldObject{
     @Override
     public int getXLocation() {
     return xlocation;
+    }
+
+    @Override
+    public void setFocussed(Boolean is) {
+        isFocussed = is;
     }
     
 }

@@ -10,10 +10,12 @@ import java.util.ArrayList;
 import Constants.World_Constants;
 import Tools.Vertice;
 import Universe.IWorldObject;
-import Universe.Inanimate;
 import Universe.Resource;
 import Universe.Space;
 import Universe.World;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.Queue;
@@ -27,6 +29,7 @@ import java.util.concurrent.ThreadLocalRandom;
  */
 public class Being implements IWorldObject, Comparable
 {
+    private boolean isFocussed = false;
     private Object data;
     private int age;
     private int gender; // 0 = female, 1 = males
@@ -38,8 +41,8 @@ public class Being implements IWorldObject, Comparable
     private World world;
     private int ylocation = -1;
     private int xlocation = -1;
+    private int direction; //integer of 360 degree direction
     private String name;
-    private double moveRange;
     private Being parentA;
     private Being parentB;
     private Being partner;
@@ -53,6 +56,9 @@ public class Being implements IWorldObject, Comparable
     private HashMap<Motivation,ArrayList> pathMemories = new HashMap<Motivation,ArrayList>();
     private boolean hasVirus = false;
     private boolean hasImmunity = true;
+    Space[][] spacialMemory = new Space[(2*World_Constants.BEING_SIGHT_RANGE)+1][(2*World_Constants.BEING_SIGHT_RANGE)+1];
+    
+    
     
     private int happiness = 0;
     private int energy = 0;
@@ -61,6 +67,15 @@ public class Being implements IWorldObject, Comparable
     private int socialiseHappinessModifier;
     private int breedHappinessModifier;
     
+    //FEATURES TO IMPLEMENT:
+    //
+    //being keeps memory map of the vector space viewed
+    //being is aware of its relative position in vector space
+    //when a being is selected its memory map is viewable in the UI
+    //being is able to chose to go to desirable locations using it smemory map
+    
+    //function to optimise increase of happiness
+    //being predicts actions to take to increase happiness
     
     
     public Being(int yloc, int xloc, Being parentA, Being ParentB, World w)
@@ -97,6 +112,16 @@ public class Being implements IWorldObject, Comparable
         born();
     }
     
+    public void setFocussed(Boolean is)
+    {
+        isFocussed = is;
+    }
+    
+    public boolean isFocussed()
+    {
+        return isFocussed;
+    }
+    
     public void maximiseHappiness()
     {
         //TO DO
@@ -121,7 +146,7 @@ public class Being implements IWorldObject, Comparable
         return gender;
     }
     
-    public void move(int yMod, int xMod)
+    public boolean move(int yMod, int xMod)
     {   
         if(yMod !=0 || xMod !=0)
         {
@@ -133,9 +158,12 @@ public class Being implements IWorldObject, Comparable
                 //update being location
                 ylocation = ylocation+yMod;
                 xlocation = xlocation+xMod;
+                return true;
             }
+            else
+                return false;
         }
-
+        return false;
     }
         
     public void reproduce(Being parentB)
@@ -237,13 +265,11 @@ public class Being implements IWorldObject, Comparable
         if(lifeRemaining > 0)
         {
             this.traverseWorld();
-
         }
         else
         {
             die();
         }
-
     }
     
     public void die()
@@ -278,18 +304,19 @@ public class Being implements IWorldObject, Comparable
                 //increase the weight of the connection by 1
                 //socialNetwork.getEdge(this, otherBeing).increaseWeight();
                 //System.out.println("I already know you " + otherBeing.toString());
-
             }
         }
     }
     
     public void traverseWorld()
     {          
+        
         //BEGIN WITH DEFAULT RANDOM MOVE DIRECTION
         yMove = ThreadLocalRandom.current().nextInt(-1,1+1);
         xMove = ThreadLocalRandom.current().nextInt(-1,1+1);
         
-        
+        direction = getMoveDirection(yMove, xMove);        
+
         //array width & height = (2*range)+1
         //but because index starts at 0, dimensions = 2* range        
         
@@ -326,8 +353,9 @@ public class Being implements IWorldObject, Comparable
         //x>currentX 
         
         //GET SURROUNDINGS
-        Space[][] surroundings = world.getSurroundingSpaces(World_Constants.BEING_SIGHT_RANGE,ylocation,xlocation);
-        ArrayList<IWorldObject> objectsInSight = new ArrayList<IWorldObject>();
+        //Space[][] surroundings = world.getSurroundingSpaces(World_Constants.BEING_SIGHT_RANGE,ylocation,xlocation);
+        Space[][] surroundings = world.getSpacesInView(World_Constants.BEING_SIGHT_RANGE,ylocation,xlocation,direction);
+        ArrayList<IWorldObject> objectsInSight = new ArrayList<IWorldObject>();       
         
         //get a 1 dimensional array of objects in the surrounding spaces
         for(int r=0;r<(2*World_Constants.BEING_SIGHT_RANGE)+1;r++)
@@ -337,44 +365,72 @@ public class Being implements IWorldObject, Comparable
             {
                 if(surroundings[r][c] != null && surroundings[r][c].getObjectInSpace()!=null)
                 {
+                    //interrogate objects in surroudings that arent null
                     objectsInSight.add(surroundings[r][c].getObjectInSpace());
+                    //System.out.println("I see object");
                 }
             }  
         }
         //remove self from this list
-        objectsInSight.remove(this);
+        objectsInSight.remove(this);        
+        
         
         //IDENTIFY OBJECTS OF INTEREST
         IWorldObject objectOfInterest = null;
-        for(IWorldObject o:objectsInSight)
+        
+        //SORT OBJECTS IN SIGHT BY DISTANCE
+        Comparator<IWorldObject> distanceOrder =  new Comparator<IWorldObject>() {
+        public int compare(IWorldObject o1, IWorldObject o2) {
+            int o1diff = Math.abs(ylocation-o1.getYLocation()) + Math.abs(xlocation-o1.getXLocation());
+            int o2diff = Math.abs(ylocation-o2.getYLocation()) + Math.abs(xlocation-o2.getXLocation());
+            return Integer.compare(o1diff, o2diff);
+        }};
+           
+        //SORT OBJECTS IN SIGHT BY FAMILIARITY
+        Comparator<IWorldObject> familiarityOrder =  new Comparator<IWorldObject>() {
+        public int compare(IWorldObject o1, IWorldObject o2) {
+            if(o1 instanceof Being & o2 instanceof Being & socialNetwork.getVertice(o1.toString())!=null & socialNetwork.getVertice(o2.toString())!=null)
+                return Integer.compare(socialNetwork.getVertice(o1.toString()).getValue(),socialNetwork.getVertice(o2.toString()).getValue());
+            else
+                return 0;
+        }};
+        
+        int objectsInSightIndex = 0;
+        //if looking for beings, chose object of interest based on familiarity
+        //pick first being from the list, if not a being move to next in list.
+        Collections.sort(objectsInSight, familiarityOrder);
+        if(motivations.contains(Motivation.BREED) | motivations.contains(Motivation.SOCIALISE) & objectsInSight.size()>0)
         {
-            if(o instanceof Being)
+            objectsInSightIndex = 0;
+            boolean repeat = true;
+            //go to closes object
+            while(repeat & objectsInSightIndex<objectsInSight.size())
             {
-                try
-                {              
-                    
-                    if(o!=this && motivations.contains(Motivation.BREED) & socialNetwork.checkIfNodeExists((Being)o) & socialNetwork.getEdge(this,(Being)o).getWeight()>socialNetwork.getEdge(this,(Being) objectOfInterest).getWeight())
-                    {
-                        objectOfInterest = (Being) o;
-                        //System.out.println("I WANT TO BREED WITH " + o.toString());
-                    }
-                    if(o!=this && motivations.contains(Motivation.SOCIALISE) & !socialNetwork.checkIfNodeExists((Being)o))
-                    {
-                        objectOfInterest = (Being) o;
-                        //System.out.println("I WANT TO SOCIALIZE WITH " + o.toString());
-                    }
+                if(objectsInSight.get(objectsInSightIndex) instanceof Being){
+                objectOfInterest = objectsInSight.get(objectsInSightIndex);
+                repeat = false;
                 }
-                catch(Exception e){
+                else
+                    objectsInSightIndex++;
+            }           
+        }
+        //if looking for inanimate objects, chose object of interest based on proximity
+        //pick first resource from the list, if not a resource move to next in list.
+        Collections.sort(objectsInSight, distanceOrder);
+        if(motivations.contains(Motivation.FEED) & objectsInSight.size()>0)
+        {
+            objectsInSightIndex = 0;
+            boolean repeat = true;
+            //go to closes object
+            while(repeat & objectsInSightIndex<objectsInSight.size())
+            {
+                if(objectsInSight.get(objectsInSightIndex) instanceof Resource){
+                objectOfInterest = objectsInSight.get(objectsInSightIndex);
+                repeat = false;
                 }
+                else
+                    objectsInSightIndex++;
             }
-            if(o instanceof Resource)
-            {
-                if(o!=this && motivations.contains(Motivation.FEED))
-                {
-                    objectOfInterest = (Resource) o;
-                    //System.out.println("I WANT TO EAT " + o.toString());
-                }    
-            } 
         }
         
         //DETERMINE DIRECTION TO MOVE TO GET TO OBJECT OF INTEREST
@@ -382,40 +438,17 @@ public class Being implements IWorldObject, Comparable
         {
             //object is above - move up
             yMove = -1;
-            if(objectOfInterest.getXLocation()<this.xlocation)
-            {
-                //above left - move left
-                xMove = -1;
-            }
-            if (objectOfInterest.getXLocation()>this.xlocation)
-            {
-                //below right - move right
-                xMove = 1;
-            }
-        }
-        else        
+        }    
         if(objectOfInterest != null && objectOfInterest.getYLocation()>this.ylocation)
         {
             //object is below - move down
             yMove = 1;
-            if(objectOfInterest.getXLocation()<this.xlocation)
-            {
-                //below left - move left;
-                xMove = -1;
-            }
-            if (objectOfInterest.getXLocation()>this.xlocation)
-            {
-                //below right - move right
-                xMove = 1;
-            }
         }
-        else
         if(objectOfInterest != null && objectOfInterest.getXLocation()<this.xlocation)
         {
             //object is left - move left;
             xMove = -1;
         }
-        else
         if(objectOfInterest != null && objectOfInterest.getXLocation()>this.xlocation)
         {
             //object is right - move right
@@ -423,20 +456,16 @@ public class Being implements IWorldObject, Comparable
         }
         
         //DETECT ADJACENT OBJECTS
-        //loop through objects to detect if object of interest is within 1x or 1y in any direction
-        for(IWorldObject o:objectsInSight)
+        //if the difference between the object location is 1 coordinate away 
+        if(objectOfInterest!=null)
         {
-            if(o!=null)
+            //System.out.println("Check adjacent");
+            int yDelta = objectOfInterest.getYLocation() - ylocation;
+            int xDelta = objectOfInterest.getXLocation() - xlocation;
+            
+            if(Integer.compareUnsigned(yDelta, 1)==0 | Integer.compareUnsigned(xDelta, 1)==0)
             {
-                //get location of object
-                int yDelta = o.getYLocation() - ylocation;
-                int xDelta = o.getXLocation() - xlocation;
-
-                //if the difference between the object lcoation is 1 coordinate away 
-                if(yDelta >=-1 & yDelta<=1 & xDelta >=-1 & xDelta <=1)
-                {
-                   interact(o);
-                }
+                interact(objectOfInterest);
             }
         }
         
@@ -451,8 +480,13 @@ public class Being implements IWorldObject, Comparable
         //[3,0][3,1][3,2][3,3][3,4];
         //[4,0][4,1][4,2][4,3][4,4];
         
-        //CHECK FOR NULL SPACE AND PREVENT MOVEMENT IN THAT DIRECTION
+        boolean avoidSpace = false;
         if(surroundings[World_Constants.BEING_SIGHT_RANGE+yMove][World_Constants.BEING_SIGHT_RANGE+xMove] == null)
+            avoidSpace = true;
+        if(surroundings[World_Constants.BEING_SIGHT_RANGE+yMove][World_Constants.BEING_SIGHT_RANGE+xMove]!= null && surroundings[World_Constants.BEING_SIGHT_RANGE+yMove][World_Constants.BEING_SIGHT_RANGE+xMove].getObjectInSpace()!=null)
+            avoidSpace = true;
+        //CHECK THAT THE SPACE BEING IS MOVING TO IS NULL OR ALREADY OCCUPIED AND PREVENT MOVEMENT IN THAT DIRECTION
+        if(avoidSpace)
         {
             if(yMove == -1)
             {
@@ -476,9 +510,84 @@ public class Being implements IWorldObject, Comparable
                 xMove = -1;
             }
         }
+              
+        //SET MOVE DIRECTION
+        direction = getMoveDirection(yMove,xMove);        
+        
+        //UPDATE BEING VIEW IF CURRENT BEING IS IN FOCUS IN THE UI
+        if(isFocussed)
+        {
+            world.populateBeingView(surroundings);           
+        }
+        
         //FINALLY, MOVE
         //move this being
-        this.move(yMove,xMove);
+        //if movement failed (blocked) then move randomly
+        if(this.move(yMove,xMove))
+        {
+            
+        }
+        else
+        {
+            //if(isFocussed)
+            //IF MOVEMENT FAILS / BLOCKED
+            //System.out.println("Most failed @ " + yMove+","+xMove);
+        }
+    }
+    
+    public int getMoveDirection(int yMove, int xMove)
+    {
+        int direction = 0;
+        if(yMove>0)
+        {
+            if(xMove>0){
+                //moving down right
+                direction = 315;}
+            else if(xMove==0){
+                //moving down only
+                direction = 270;}
+            else if(xMove<0){
+                //moving down left
+                direction = 225;}
+        }
+        else if( yMove==0)
+        {
+            if(xMove>0){
+                //moving right only
+                direction = 0;}
+            else if(xMove==0){
+                //not moving at all
+                direction = -1;}
+            else if(xMove<0){
+                //moving left only
+                direction = 180;}
+        }
+        else if(yMove<0)
+        {
+            if(xMove>0){
+                //moving up right
+                direction = 45;}
+            else if(xMove==0){
+                //moving up only
+                direction = 90;}
+            else if(xMove<0){
+                //moving up left
+                direction = 135;}
+        } 
+        return direction;
+    }
+    
+    public void updateSpacialMemory(char direction)
+    {
+        int height = spacialMemory.length; //rows
+        int width = spacialMemory[0].length; //columns
+        
+        //if height increase
+        spacialMemory = Arrays.copyOf(spacialMemory, width+1);
+        
+        //if width increase
+        for(Space[] sa:spacialMemory)
+            sa = Arrays.copyOf(sa, width+1);  
     }
 
     public boolean checkMotivations(Motivation motivation)
@@ -574,6 +683,11 @@ public class Being implements IWorldObject, Comparable
     @Override
     public int getXLocation() {
         return xlocation;
+    }
+    
+    public int getDirection()
+    {
+        return direction;
     }
 
     @Override

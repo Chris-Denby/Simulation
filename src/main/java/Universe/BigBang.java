@@ -22,13 +22,9 @@ public class BigBang
     {
        visibleWorld = new VisibleWorld();
        world = new World(visibleWorld);
+       visibleWorld.bind(world);
        world.populateWithSpace();
-       
-       int startingPop = 20;
-       Being being;
-       for(int x=0;x<startingPop;x++)
-       {
-            world.registerExistence(new Being(ThreadLocalRandom.current().nextInt(1,World_Constants.WORLD_HEIGHT),ThreadLocalRandom.current().nextInt(1,World_Constants.WORLD_WIDTH),world));
-       } 
     }
+    
+    
 }

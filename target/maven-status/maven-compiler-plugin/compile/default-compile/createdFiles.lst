@@ -1,0 +1,8 @@
+Entities\Being.class
+Tools\Graph.class
+Main\World_Constraints.class
+Tools\Graph$Edge.class
+Universe\World.class
+Entities\Trait.class
+Tools\Vertice.class
+Universe\World$TestObject.class

@@ -16,7 +16,7 @@ public class Vertice
 {
     //name of object the Vertice represents
     Object thing; 
-    int value;
+    int value = 0;
 
     public Vertice(Object thing, int value)
     {

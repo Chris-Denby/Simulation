@@ -9,15 +9,21 @@ package Universe;
  *
  * @author chris
  */
-public abstract interface IWorldObject 
+public class Resource extends Inanimate
 {
+    private int energy = 10;
     
-    public void setLocation(int ylocation, int xlocation);
+    //default constructor
+    public Resource(int y, int x) 
+    {
+        super(y, x);
+    }
     
-    public int getYLocation();
+    public int getEnergy()
+    {
+        return energy;
+    }
     
-    public int getXLocation();
     
-    public void setFocussed(Boolean is);
     
 }
